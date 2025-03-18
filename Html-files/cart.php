@@ -1,63 +1,76 @@
 <?php
+// Include the database connection file
+require_once 'db.php'; 
+
+// Start the session to access session variables
 session_start();
-require_once 'db.php'; // Include your database connection
 
 // Check if the user is logged in (user_id should exist in session)
 if (!isset($_SESSION['user_id'])) {
     header("Location: login.php");
     exit();
-}
+} else {
+    // Proceed if the user is logged in
+    $user_id = $_SESSION['user_id'];
 
-$user_id = $_SESSION['user_id'];
+    // Handle adding items to the cart
+    if (isset($_POST['add_to_cart'])) {
+        $product_id = $_POST['product_id'];
+        $product_name = $_POST['product_name'];
+        $product_price = $_POST['product_price'];
+        $product_img = $_POST['product_img'];
 
-// Handle adding items to the cart
-if (isset($_POST['add_to_cart'])) {
-    $product_id = $_POST['product_id'];
-    $product_name = $_POST['product_name'];
-    $product_price = $_POST['product_price'];
-    $product_img = $_POST['product_img'];
+        // Check if the product is already in the cart for this user
+        $query = "SELECT * FROM cart WHERE user_id = ? AND product_id = ?";
+        $stmt = $conn->prepare($query); // Use $conn instead of $pdo
+        $stmt->bind_param("ii", $user_id, $product_id); // Bind parameters for security
+        $stmt->execute();
+        $existing_item = $stmt->get_result()->fetch_assoc(); // Use get_result() and fetch_assoc() with mysqli
 
-    // Check if the product is already in the cart for this user
-    $query = "SELECT * FROM cart WHERE user_id = ? AND product_id = ?";
-    $stmt = $pdo->prepare($query);
-    $stmt->execute([$user_id, $product_id]);
-    $existing_item = $stmt->fetch();
+        if ($existing_item) {
+            // If product already in cart, update quantity
+            $new_quantity = $existing_item['quantity'] + 1;
+            $update_query = "UPDATE cart SET quantity = ? WHERE id = ?";
+            $update_stmt = $conn->prepare($update_query); // Use $conn instead of $pdo
+            $update_stmt->bind_param("ii", $new_quantity, $existing_item['id']); // Bind parameters
+            $update_stmt->execute();
+        } else {
+            // If product not in cart, add a new row
+            $insert_query = "INSERT INTO cart (user_id, product_id, product_name, product_price, product_img, quantity) VALUES (?, ?, ?, ?, ?, ?)";
+            $insert_stmt = $conn->prepare($insert_query); // Use $conn instead of $pdo
+            $insert_stmt->bind_param("iissdi", $user_id, $product_id, $product_name, $product_price, $product_img, 1); // Bind parameters
+            $insert_stmt->execute();
+        }
 
-    if ($existing_item) {
-        // If product already in cart, update quantity
-        $new_quantity = $existing_item['quantity'] + 1;
-        $update_query = "UPDATE cart SET quantity = ? WHERE id = ?";
-        $update_stmt = $pdo->prepare($update_query);
-        $update_stmt->execute([$new_quantity, $existing_item['id']]);
-    } else {
-        // If product not in cart, add a new row
-        $insert_query = "INSERT INTO cart (user_id, product_id, product_name, product_price, product_img, quantity) VALUES (?, ?, ?, ?, ?, ?)";
-        $insert_stmt = $pdo->prepare($insert_query);
-        $insert_stmt->execute([$user_id, $product_id, $product_name, $product_price, $product_img, 1]);
+        // Return the number of items in the cart
+        $cart_count_query = "SELECT SUM(quantity) FROM cart WHERE user_id = ?";
+        $cart_count_stmt = $conn->prepare($cart_count_query); // Use $conn instead of $pdo
+        $cart_count_stmt->bind_param("i", $user_id); // Bind parameters
+        $cart_count_stmt->execute();
+        $cart_count_stmt->bind_result($cart_count); // Get the result
+        $cart_count_stmt->fetch();
+
+        echo json_encode(['success' => true, 'cartCount' => $cart_count]);
+        exit();
     }
 
-    // Return the number of items in the cart
-    $cart_count_query = "SELECT SUM(quantity) FROM cart WHERE user_id = ?";
-    $cart_count_stmt = $pdo->prepare($cart_count_query);
-    $cart_count_stmt->execute([$user_id]);
-    $cart_count = $cart_count_stmt->fetchColumn();
+    // Fetch cart items for this user
+    $query = "SELECT * FROM cart WHERE user_id = ?";
+    $stmt = $conn->prepare($query); // Use $conn instead of $pdo
+    $stmt->bind_param("i", $user_id); // Bind parameters
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $cart_items = $result->fetch_all(MYSQLI_ASSOC);
 
-    echo json_encode(['success' => true, 'cartCount' => $cart_count]);
-    exit();
-}
-
-// Fetch cart items for this user
-$query = "SELECT * FROM cart WHERE user_id = ?";
-$stmt = $pdo->prepare($query);
-$stmt->execute([$user_id]);
-$cart_items = $stmt->fetchAll();
-
-// Calculate the cart total
-$cart_total = 0;
-foreach ($cart_items as $item) {
-    $cart_total += $item['product_price'] * $item['quantity'];
+    // Calculate the cart total
+    $cart_total = 0;
+    foreach ($cart_items as $item) {
+        $cart_total += $item['product_price'] * $item['quantity'];
+    }
 }
 ?>
+
+
 
 
 <!DOCTYPE html>
